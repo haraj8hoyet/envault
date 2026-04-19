@@ -1,94 +1,91 @@
-"""Command-line interface for envault."""
-
-import sys
+"""Main CLI entry point for envault."""
 import click
 from envault.vault import Vault
+from envault.storage import vault_exists, list_vaults
+from envault.cli_import import import_cli
+from envault.cli_search import search_cli
 
 
 @click.group()
 def cli():
-    """envault — securely store and sync environment variables."""
+    """envault — secure environment variable manager."""
     pass
 
 
 @cli.command()
 @click.argument("name")
-@click.password_option(prompt="Master password", help="Master password for the vault.")
+@click.password_option()
 def create(name, password):
-    """Create a new vault with the given NAME."""
-    try:
-        Vault.create(name, password)
-        click.echo(f"Vault '{name}' created successfully.")
-    except FileExistsError:
-        click.echo(f"Error: Vault '{name}' already exists.", err=True)
-        sys.exit(1)
+    """Create a new vault."""
+    if vault_exists(name):
+        click.echo(f"Vault '{name}' already exists.", err=True)
+        raise SystemExit(1)
+    Vault.create(name, password)
+    click.echo(f"Vault '{name}' created.")
 
 
-@cli.command(name="set")
+@cli.command("set")
 @click.argument("vault_name")
 @click.argument("key")
 @click.argument("value")
-@click.password_option(prompt="Master password", confirmation_prompt=False)
+@click.password_option(prompt="Vault password", confirmation_prompt=False)
 def set_var(vault_name, key, value, password):
-    """Set KEY=VALUE in the specified vault."""
-    try:
-        vault = Vault.open(vault_name, password)
-        vault.set(key, value)
-        click.echo(f"Set '{key}' in vault '{vault_name}'.")
-    except Exception as e:
-        click.echo(f"Error: {e}", err=True)
-        sys.exit(1)
+    """Set a variable in a vault."""
+    if not vault_exists(vault_name):
+        click.echo(f"Vault '{vault_name}' does not exist.", err=True)
+        raise SystemExit(1)
+    vault = Vault.open(vault_name, password)
+    vault.set(key, value)
+    click.echo(f"Set {key} in '{vault_name}'.")
 
 
-@cli.command(name="get")
+@cli.command("get")
 @click.argument("vault_name")
 @click.argument("key")
-@click.password_option(prompt="Master password", confirmation_prompt=False)
+@click.password_option(prompt="Vault password", confirmation_prompt=False)
 def get_var(vault_name, key, password):
-    """Get the value of KEY from the specified vault."""
-    try:
-        vault = Vault.open(vault_name, password)
-        value = vault.get(key)
-        if value is None:
-            click.echo(f"Key '{key}' not found.", err=True)
-            sys.exit(1)
-        click.echo(value)
-    except Exception as e:
-        click.echo(f"Error: {e}", err=True)
-        sys.exit(1)
+    """Get a variable from a vault."""
+    if not vault_exists(vault_name):
+        click.echo(f"Vault '{vault_name}' does not exist.", err=True)
+        raise SystemExit(1)
+    vault = Vault.open(vault_name, password)
+    value = vault.get(key)
+    if value is None:
+        click.echo(f"Key '{key}' not found.", err=True)
+        raise SystemExit(1)
+    click.echo(value)
 
 
-@cli.command(name="list")
+@cli.command("list")
 @click.argument("vault_name")
-@click.password_option(prompt="Master password", confirmation_prompt=False)
+@click.password_option(prompt="Vault password", confirmation_prompt=False)
 def list_vars(vault_name, password):
-    """List all keys stored in the specified vault."""
-    try:
-        vault = Vault.open(vault_name, password)
-        keys = vault.keys()
-        if not keys:
-            click.echo("(no variables stored)")
-        else:
-            for key in sorted(keys):
-                click.echo(key)
-    except Exception as e:
-        click.echo(f"Error: {e}", err=True)
-        sys.exit(1)
+    """List all variables in a vault."""
+    if not vault_exists(vault_name):
+        click.echo(f"Vault '{vault_name}' does not exist.", err=True)
+        raise SystemExit(1)
+    vault = Vault.open(vault_name, password)
+    variables = vault.all()
+    if not variables:
+        click.echo("No variables stored.")
+    else:
+        for k, v in sorted(variables.items()):
+            click.echo(f"{k}={v}")
 
 
-@cli.command()
-@click.argument("vault_name")
-@click.password_option(prompt="Master password", confirmation_prompt=False)
-def export(vault_name, password):
-    """Export all variables as shell export statements."""
-    try:
-        vault = Vault.open(vault_name, password)
-        for key in sorted(vault.keys()):
-            value = vault.get(key)
-            click.echo(f"export {key}={value!r}")
-    except Exception as e:
-        click.echo(f"Error: {e}", err=True)
-        sys.exit(1)
+@cli.command("vaults")
+def vaults():
+    """List all available vaults."""
+    names = list_vaults()
+    if not names:
+        click.echo("No vaults found.")
+    else:
+        for name in sorted(names):
+            click.echo(name)
+
+
+cli.add_command(import_cli, name="import")
+cli.add_command(search_cli, name="search")
 
 
 if __name__ == "__main__":
